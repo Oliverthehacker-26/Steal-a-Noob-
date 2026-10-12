@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Steal a Noob!</title>
+<style>
+:root{--ink:#17213a;--purple:#7166e8;--green:#36b96b;--gold:#ffd65a;--panel:#fffef7}
+*{box-sizing:border-box}body{margin:0;background:linear-gradient(#bdefff,#e3ffd6);font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:var(--ink)}
+header{text-align:center;padding:12px 10px 8px}h1{font-size:clamp(25px,4vw,40px);margin:0;letter-spacing:-1px}header p{margin:3px 0 0;font-size:14px}
+main{max-width:1180px;margin:auto;padding:0 12px 18px;display:grid;grid-template-columns:minmax(0,1fr) 290px;gap:12px}
+.card{background:#ffffffdf;border:3px solid white;border-radius:17px;padding:10px;box-shadow:0 7px 0 #76bc8d55;min-width:0}
+canvas{width:100%;height:auto;display:block;border-radius:11px;background:#a6e8a0;image-rendering:pixelated;touch-action:none}
+.hud{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.pill{background:#f1f5ff;border-radius:20px;padding:6px 9px;font-size:12px;font-weight:800}
+h2{font-size:17px;margin:7px 0}p{font-size:13px;line-height:1.4;margin:5px 0 9px}.small{font-size:11px;color:#5d6980}
+button{border:0;border-radius:10px;background:var(--purple);color:white;font-weight:800;padding:10px;cursor:pointer;width:100%;margin:3px 0;box-shadow:0 3px 0 #4940ad}
+button:disabled{opacity:.45;cursor:not-allowed}button.green{background:var(--green);box-shadow:0 3px 0 #19804a}button.gold{background:#ed9c2c;box-shadow:0 3px 0 #b66b13}button.grey{background:#718096;box-shadow:0 3px 0 #4d586c}
+.stat{display:flex;justify-content:space-between;gap:6px;font-size:12px;margin:7px 0}.stat b{white-space:nowrap}
+#message{background:#fff4bf;padding:9px;border-radius:10px;min-height:42px;font-weight:750;font-size:12px}
+.controls{display:grid;grid-template-columns:repeat(3,48px);justify-content:center;gap:5px;margin:8px auto 2px}.controls button{margin:0;padding:10px 0;background:#5e7194;box-shadow:0 3px 0 #354763}.controls button.blank{visibility:hidden}
+.badge{display:inline-block;background:#e8e4ff;color:#4138a3;border-radius:5px;padding:2px 5px;font-size:10px;font-weight:900}
+#inventory{font-size:12px;background:#f4f8ff;border-radius:9px;padding:8px;min-height:32px}
+@media(max-width:800px){main{grid-template-columns:1fr}.side{order:2}.play{order:1}}
+</style>
+</head>
+<body>
+<header><h1>🥚 STEAL A NOOB!</h1><p>Steal eggs. Escape the Guardians. Hatch Noobs. Build your empire.</p></header>
+<main>
+<section class="card play">
+<canvas id="game" width="800" height="520" aria-label="Steal a Noob game"></canvas>
+<div class="hud">
+ <span class="pill" id="cash">💵 $100</span><span class="pill" id="income">📈 $0/sec</span>
+ <span class="pill" id="noobCount">🧍 Noobs: 0</span><span class="pill" id="penLevel">🏡 Pen Lv. 1</span>
+ <span class="pill" id="clock">☀️ Day</span>
+</div>
+<div class="controls" aria-label="Touch movement controls">
+ <button class="blank">·</button><button data-move="up">▲</button><button class="blank">·</button>
+ <button data-move="left">◀</button><button data-move="down">▼</button><button data-move="right">▶</button>
+</div>
+<p class="small">Move: WASD / arrow keys. Interact: E or Space. Walk close to an egg to steal it, then get back to your green Safe Zone. On mobile, use the arrows and tap INTERACT.</p>
+<button id="interact" class="green">✋ INTERACT / PLANT EGG</button>
+</section>
+<aside class="card side">
+<h2>🎯 Your mission</h2><p>Steal an egg from a Guardian's yard. While carrying it, the Guardian chases you! Reach your Safe Zone to escape, plant the egg, then wait for your Noob to hatch.</p>
+<div id="message" role="status">Welcome! Your starter cash is $100. Go steal an egg!</div>
+<h2>🥚 Egg carried</h2><div id="inventory">Nothing yet — find an egg in a Guardian yard.</div>
+<h2>🛠️ Upgrades</h2>
+<div class="stat"><span>Pen upgrade</span><b id="penCost">$50</b></div><button id="penBtn" class="green">🏡 Upgrade Pen</button>
+<p class="small">Each level gives more egg slots and a small income bonus.</p>
+<div class="stat"><span>Aura Treadmill</span><b id="auraCost">$75</b></div><button id="auraBtn" class="gold">✨ Upgrade Aura Treadmill</button>
+<p class="small">Boosts income from all your Noobs by 25% per level.</p>
+<div class="stat"><span>Speed shoes</span><b id="speedCost">$100</b></div><button id="speedBtn">👟 Upgrade Speed</button>
+<h2>🌙 Day & Night Shift</h2><p>Time cycles between day and night. During Night Shift, Guardians become faster and rare eggs have a better chance to appear. The map gets darker, so watch your route!</p>
+<button id="saveBtn" class="grey">💾 Save Game</button><button id="resetBtn" class="grey">↻ Reset Game</button>
+<p class="small">Single-file game for GitHub Pages. Progress saves in this browser automatically.</p>
+</aside>
+</main>
+<script>
+(()=>{
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const $=id=>document.getElementById(id);
+const W=canvas.width,H=canvas.height;
+const keys={},touch={up:false,down:false,left:false,right:false};
+const eggTypes=[
+ {name:'Common Egg',color:'#fff7dc',rarity:'Common',time:8,income:2,weight:52},
+ {name:'Uncommon Egg',color:'#b4f5bc',rarity:'Uncommon',time:12,income:5,weight:25},
+ {name:'Rare Egg',color:'#83d8ff',rarity:'Rare',time:17,income:12,weight:13},
+ {name:'Epic Egg',color:'#d5a0ff',rarity:'Epic',time:22,income:28,weight:6},
+ {name:'Legendary Egg',color:'#ffcc4d',rarity:'Legendary',time:30,income:65,weight:3},
+ {name:'Secret Egg',color:'#ff7ca5',rarity:'Secret',time:40,income:160,weight:1}
+];
+const noobLooks=[
+ {name:'Classic Noob',color:'#ffe35b',mult:1},{name:'Cool Noob',color:'#7de3ff',mult:1.4},
+ {name:'Rich Noob',color:'#8affb1',mult:2},{name:'Glitch Noob',color:'#e6a1ff',mult:3},
+ {name:'Golden Noob',color:'#ffbd36',mult:5},{name:'Secret Noob',color:'#ff72ac',mult:10}
+];
+let player,guardians,eggs,save,dayClock,nightShift,toastTimer,lastFrame=0,elapsed=0,particles=[];
+function fresh(){
+ save={cash:100,pen:1,aura:0,speed:0,noobs:[],slots:3,carried:null,planted:[],totalStolen:0};
+ player={x:115,y:410,r:13,baseSpeed:2.5,dirX:1,dirY:0,invuln:0};
+ guardians=[
+ {name:"Don't-Care Parent",x:565,y:110,r:18,color:'#f0a56d',speed:1.0,homeX:565,homeY:110,range:115,style:'phone',alert:false},
+ {name:'Fat Gym Teacher',x:680,y:330,r:20,color:'#ed7777',speed:1.12,homeX:680,homeY:330,range:140,style:'gym',alert:false},
+ {name:'Strict Grandma',x:390,y:95,r:18,color:'#bd8ad9',speed:1.05,homeX:390,homeY:95,range:100,style:'grandma',alert:false}
+ ];
+ eggs=[
+ makeEgg(570,160,0),makeEgg(700,390,1),makeEgg(420,145,2),makeEgg(330,320,3),makeEgg(625,245,4)
+ ];
+ dayClock=0;nightShift=false;elapsed=0;particles=[];updateUI();say('Welcome! Your starter cash is $100. Go steal an egg!');
+}
+function makeEgg(x,y,i){return {x,y,r:12,type:i,available:true,respawn:0,phase:Math.random()*6};}
+function say(t){$('message').textContent=t;toastTimer=4.5;}
+function randEgg(night=false){
+ let list=eggTypes.map(e=>({...e,weight:e.weight*(night&&['Legendary','Secret'].includes(e.rarity)?2.5:1)}));
+ let sum=list.reduce((a,e)=>a+e.weight,0),r=Math.random()*sum;
+ for(let i=0;i<list.length;i++){r-=list[i].weight;if(r<=0)return i;}return 0;
+}
+function near(a,b,d){return Math.hypot(a.x-b.x,a.y-b.y)<d;}
+function getIncome(){return save.noobs.reduce((s,n)=>s+n.income*n.mult,0)*(1+save.aura*.25)*(1+(save.pen-1)*.05);}
+function penCapacity(){return 3+(save.pen-1)*2;}
+function penCost(){return Math.floor(50*Math.pow(1.8,save.pen-1));}
+function auraCost(){return Math.floor(75*Math.pow(1.85,save.aura));}
+function speedCost(){return Math.floor(100*Math.pow(1.9,save.speed));}
+function updateUI(){
+ $('cash').textContent='💵 $'+Math.floor(save.cash).toLocaleString();
+ $('income').textContent='📈 $'+getIncome().toFixed(1)+'/sec';
+ $('noobCount').textContent='🧍 Noobs: '+save.noobs.length+'/'+penCapacity();
+ $('penLevel').textContent='🏡 Pen Lv. '+save.pen;
+ $('penCost').textContent='$'+penCost();$('auraCost').textContent='$'+auraCost();$('speedCost').textContent='$'+speedCost();
+ $('penBtn').disabled=save.cash<penCost();$('auraBtn').disabled=save.cash<auraCost();$('speedBtn').disabled=save.cash<speedCost();
+ $('inventory').textContent=save.carried?('Carrying: '+eggTypes[save.carried.type].name+' ('+eggTypes[save.carried.type].rarity+')'):(save.planted.length?'Hatching: '+save.planted.map(e=>e.name+' '+Math.ceil(e.left)+'s').join(' • '):'Nothing yet — find an egg in a Guardian yard.');
+ $('clock').textContent=nightShift?'🌙 NIGHT SHIFT':'☀️ DAY SHIFT';
+}
+function saveGame(){try{localStorage.setItem('stealANoobSave',JSON.stringify({save,player:{x:player.x,y:player.y},dayClock,nightShift}));say('Game saved in this browser!');}catch(e){say('Could not save in this browser.');}}
+function loadGame(){try{let d=JSON.parse(localStorage.getItem('stealANoobSave'));if(d&&d.save){save=d.save;player={x:d.player?.x||115,y:d.player?.y||410,r:13,baseSpeed:2.5,dirX:1,dirY:0,invuln:0};dayClock=d.dayClock||0;nightShift=!!d.nightShift;return true;}}catch(e){}return false;}
+function interact(){
+ if(save.carried){
+  if(player.x<245&&player.y>305){if(save.noobs.length+save.planted.length>=penCapacity()){say('Your pen is full! Upgrade your pen first.');return;}
+   let t=save.carried.type;save.planted.push({type:t,name:eggTypes[t].name,left:eggTypes[t].time,baseIncome:eggTypes[t].income});
+   save.carried=null;guardians.forEach(g=>g.alert=false);say('Egg planted! Hatch in '+eggTypes[save.planted[save.planted.length-1].type].time+' seconds.');updateUI();return;
+  }say('Get back to the green SAFE ZONE to plant your egg!');return;
+ }
+ let candidates=eggs.filter(e=>e.available&&near(player,e,35));
+ if(!candidates.length){say('No egg close enough. Find an egg in a Guardian yard!');return;}
+ let e=candidates.sort((a,b)=>Math.hypot(player.x-a.x,player.y-a.y)-Math.hypot(player.x-b.x,player.y-b.y))[0];
+ e.available=false;e.respawn=35;save.carried={type:e.type};save.totalStolen++;
+ guardians.forEach(g=>{if(Math.hypot(player.x-g.x,player.y-g.y)<230)g.alert=true;});
+ // The egg owner always notices the theft, making the escape loop clear.
+ guardians.reduce((best,g)=>Math.hypot(e.x-g.homeX,e.y-g.homeY)<Math.hypot(e.x-best.homeX,e.y-best.homeY)?g:best,guardians[0]).alert=true;
+ say('EGG STOLEN! Run to your green Safe Zone!');updateUI();
+}
+function catchPlayer(g){
+ if(!save.carried||player.invuln>0)return;
+ save.carried=null;player.x=115;player.y=410;player.invuln=2.5;
+ guardians.forEach(q=>q.alert=false);
+ say(g.name+' caught you! You dropped the egg. Try again!');
+ updateUI();
+}
+function update(dt){
+ elapsed+=dt;dayClock=(dayClock+dt)%80;let shouldNight=dayClock>48;
+ if(shouldNight!==nightShift){nightShift=shouldNight;say(nightShift?'🌙 NIGHT SHIFT! Guardians are faster, but rare eggs are more common.':'☀️ Day shift! Guardians have calmed down.');}
+ let dx=0,dy=0;
+ if(keys.ArrowLeft||keys.a||touch.left)dx--;if(keys.ArrowRight||keys.d||touch.right)dx++;
+ if(keys.ArrowUp||keys.w||touch.up)dy--;if(keys.ArrowDown||keys.s||touch.down)dy++;
+ if(dx||dy){let l=Math.hypot(dx,dy)||1;dx/=l;dy/=l;player.x+=dx*(player.baseSpeed+save.speed*.35)*dt*60;player.y+=dy*(player.baseSpeed+save.speed*.35)*dt*60;player.dirX=dx;player.dirY=dy;}
+ player.x=Math.max(20,Math.min(W-20,player.x));player.y=Math.max(20,Math.min(H-20,player.y));
+ if(player.invuln>0)player.invuln-=dt;
+ guardians.forEach(g=>{
+  let d=Math.hypot(player.x-g.x,player.y-g.y),chase=save.carried&&g.alert;
+  let targetX=chase?player.x:g.homeX,targetY=chase?player.y:g.homeY;
+  if(!chase&&d<g.range&&save.carried){g.alert=true;chase=true;targetX=player.x;targetY=player.y;}
+  if(!chase&&g.style==='phone'&&Math.random()<.001){} // parent occasionally looks away
+  let vx=targetX-g.x,vy=targetY-g.y,dist=Math.hypot(vx,vy)||1;
+  if(chase){let sp=g.speed*(nightShift?1.45:1)*(g.style==='gym'&&d<160?1.35:1);g.x+=vx/dist*sp*dt*60;g.y+=vy/dist*sp*dt*60;
+   if(d<g.r+player.r+2)catchPlayer(g);
+  }else{g.x+=(vx/dist)*Math.min(dist,0.5*dt*60);g.y+=(vy/dist)*Math.min(dist,0.5*dt*60);}
+ });
+ eggs.forEach(e=>{
+  if(!e.available){e.respawn-=dt;if(e.respawn<=0){e.available=true;if(Math.random()<.35)e.type=randEgg(nightShift);}}
+ });
+ save.planted.forEach(e=>e.left-=dt);
+ let hatched=save.planted.filter(e=>e.left<=0);
+ if(hatched.length){hatched.forEach(e=>{
+  let t=e.type, rarity=eggTypes[t].rarity;
+  let lookIndex=t===0?0:t===1?Math.random()<.5?0:1:t===2?1:t===3?2:t===4?4:5;
+  if(t===3&&Math.random()<.2)lookIndex=3;
+  let look=noobLooks[lookIndex];
+  save.noobs.push({name:look.name,income:e.baseIncome, mult:look.mult, color:look.color,rarity});
+  say('🥳 HATCHED: '+look.name+'! It earns $'+(e.baseIncome*look.mult)+'/sec.');
+  for(let i=0;i<14;i++)particles.push({x:240+Math.random()*80,y:340+Math.random()*60,vx:(Math.random()-.5)*3,vy:-Math.random()*3,life:1,color:look.color});
+ });save.planted=save.planted.filter(e=>e.left>0);updateUI();}
+ save.cash+=getIncome()*dt;
+ particles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=.05;p.life-=dt;});particles=particles.filter(p=>p.life>0);
+ if(toastTimer>0)toastTimer-=dt;
+}
+function rounded(x,y,w,h,r,color){ctx.fillStyle=color;ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fill();}
+function drawEgg(x,y,type,scale=1){
+ const e=eggTypes[type];ctx.save();ctx.translate(x,y);ctx.scale(scale,scale);ctx.fillStyle=e.color;ctx.strokeStyle='#665b55';ctx.lineWidth=1.5;
+ ctx.beginPath();ctx.ellipse(0,0,10,13,0,0,Math.PI*2);ctx.fill();ctx.stroke();
+ ctx.fillStyle='#fff';ctx.beginPath();ctx.ellipse(-3,-4,2.5,4,-.4,0,Math.PI*2);ctx.fill();
+ ctx.restore();
+}
+function drawPerson(x,y,color,label,kind,scale=1){
+ ctx.save();ctx.translate(x,y);ctx.scale(scale,scale);
+ // shadow
+ ctx.fillStyle='#25344a30';ctx.beginPath();ctx.ellipse(0,12,16,6,0,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle=color;ctx.fillRect(-11,-5,22,21);ctx.fillStyle='#ffd7ac';ctx.fillRect(-9,-22,18,18);
+ ctx.fillStyle='#302d36';ctx.fillRect(-10,-24,20,5);
+ ctx.fillStyle='#222';ctx.fillRect(-5,-16,3,3);ctx.fillRect(3,-16,3,3);
+ if(kind==='phone'){ctx.fillStyle='#38455c';ctx.fillRect(7,-2,5,9);}
+ if(kind==='gym'){ctx.fillStyle='#fff';ctx.fillRect(-3,-3,6,16);ctx.strokeStyle='#fff';ctx.beginPath();ctx.moveTo(-14,0);ctx.lineTo(-19,8);ctx.stroke();}
+ if(kind==='grandma'){ctx.fillStyle='#eee5ff';ctx.fillRect(-10,-24,20,5);}
+ ctx.fillStyle='#17213a';ctx.font='bold 10px system-ui';ctx.textAlign='center';ctx.fillText(label,0,31);
+ ctx.restore();
+}
+function draw(){
+ ctx.clearRect(0,0,W,H);
+ // ground tiles
+ ctx.fillStyle=nightShift?'#456e68':'#a6e8a0';ctx.fillRect(0,0,W,H);
+ for(let y=0;y<H;y+=40)for(let x=0;x<W;x+=40){ctx.fillStyle=((x+y)/40)%2===0?(nightShift?'#416860':'#a0e296'):(nightShift?'#477164':'#aceaa2');ctx.fillRect(x,y,40,40);}
+ // paths
+ ctx.fillStyle=nightShift?'#8b8a7b':'#e7d7a8';ctx.fillRect(0,240,W,45);ctx.fillRect(260,0,45,H);
+ // player base and safe zone
+ rounded(22,320,220,175,14,'#f5fff1');rounded(28,326,208,163,10,'#b8f5b4');
+ ctx.strokeStyle='#2da65a';ctx.lineWidth=4;ctx.setLineDash([8,5]);ctx.strokeRect(35,333,194,148);ctx.setLineDash([]);
+ ctx.fillStyle='#176c3a';ctx.font='bold 16px system-ui';ctx.textAlign='center';ctx.fillText('YOUR BASE',132,351);
+ ctx.font='bold 11px system-ui';ctx.fillText('SAFE ZONE',132,370);
+ // pen slots
+ for(let i=0;i<penCapacity();i++){let col=i%4,row=Math.floor(i/4),x=48+col*43,y=387+row*43;if(y>474)continue;
+  rounded(x,y,36,32,6,'#7ecf7c');ctx.strokeStyle='#42924c';ctx.lineWidth=1;ctx.strokeRect(x,y,36,32);
+  let n=save.noobs[i];let p=save.planted[i-save.noobs.length];
+  if(n){ctx.fillStyle=n.color;ctx.fillRect(x+8,y+5,20,19);ctx.fillStyle='#222';ctx.fillRect(x+12,y+11,3,3);ctx.fillRect(x+21,y+11,3,3);}
+  else if(p){drawEgg(x+18,y+16,p.type,.62);ctx.fillStyle='#15213a';ctx.font='8px system-ui';ctx.fillText(Math.ceil(p.left)+'s',x+18,y+30);}
+ }
+ // yards
+ const yardData=[{x:500,y:35,w:270,h:170,color:'#ffd4b4',label:"DON'T-CARE PARENT'S YARD"},{x:530,y:280,w:240,h:205,color:'#ffd0d0',label:'GYM TEACHER YARD'},{x:320,y:35,w:155,h:160,color:'#ead3ff',label:"GRANDMA'S YARD"}];
+ yardData.forEach(y=>{rounded(y.x,y.y,y.w,y.h,12,y.color);ctx.strokeStyle='#ffffff';ctx.lineWidth=3;ctx.strokeRect(y.x+5,y.y+5,y.w-10,y.h-10);ctx.fillStyle='#4a3440';ctx.font='bold 11px system-ui';ctx.textAlign='center';ctx.fillText(y.label,y.x+y.w/2,y.y+20);});
+ // eggs
+ eggs.forEach(e=>{if(e.available){let bob=Math.sin(elapsed*3+e.phase)*2;drawEgg(e.x,e.y+bob,e.type,1);ctx.fillStyle='#24324b';ctx.font='bold 9px system-ui';ctx.textAlign='center';ctx.fillText(eggTypes[e.type].rarity,e.x,e.y+24);}});
+ // guardians and vision hints
+ guardians.forEach(g=>{
+  if(g.alert){ctx.strokeStyle='#f33';ctx.lineWidth=2;ctx.beginPath();ctx.arc(g.x,g.y,28,0,Math.PI*2);ctx.stroke();}
+  drawPerson(g.x,g.y,g.color,g.name,g.style,g.style==='gym'?1.08:1);
+  if(g.alert&&save.carried){ctx.fillStyle='#ff3434';ctx.font='bold 12px system-ui';ctx.textAlign='center';ctx.fillText('!',g.x,g.y-34);}
+ });
+ // player
+ if(player.invuln>0&&Math.floor(elapsed*10)%2===0){}else drawPerson(player.x,player.y,save.carried?'#ffcf55':'#4f91ff','YOU','player',1);
+ if(save.carried){drawEgg(player.x+15,player.y-24,save.carried.type,.72);}
+ // interaction hint
+ if(!save.carried){let e=eggs.find(e=>e.available&&near(player,e,38));if(e){rounded(player.x-62,player.y-53,124,22,7,'#fff');ctx.fillStyle='#17213a';ctx.font='bold 11px system-ui';ctx.textAlign='center';ctx.fillText('Press E to steal!',player.x,player.y-38);}}
+ // particle burst
+ particles.forEach(p=>{ctx.globalAlpha=Math.max(0,p.life);ctx.fillStyle=p.color;ctx.fillRect(p.x,p.y,5,5);ctx.globalAlpha=1;});
+ // night tint
+ if(nightShift){ctx.fillStyle='rgba(14,20,65,.28)';ctx.fillRect(0,0,W,H);ctx.fillStyle='#fff';for(let i=0;i<28;i++){let x=(i*97+23)%W,y=(i*53+9)%230;ctx.fillRect(x,y,2,2);}ctx.fillStyle='#fff0a8';ctx.beginPath();ctx.arc(745,42,15,0,Math.PI*2);ctx.fill();ctx.fillStyle='#456e68';ctx.beginPath();ctx.arc(751,36,15,0,Math.PI*2);ctx.fill();ctx.fillStyle='#fff';ctx.font='bold 14px system-ui';ctx.textAlign='left';ctx.fillText('NIGHT SHIFT',16,22);}
+ // bottom carrying alert
+ if(save.carried){rounded(290,468,220,36,9,'#ffefb0');ctx.fillStyle='#4c2c18';ctx.font='bold 12px system-ui';ctx.textAlign='center';ctx.fillText('EGG STOLEN! GET TO YOUR BASE!',400,490);}
+}
+function frame(t){let dt=Math.min(.04,(t-lastFrame)/1000||0);lastFrame=t;update(dt);draw();if(Math.floor(elapsed*4)!==Math.floor((elapsed-dt)*4))updateUI();requestAnimationFrame(frame);}
+document.addEventListener('keydown',e=>{let k=e.key.length===1?e.key.toLowerCase():e.key;keys[k]=true;if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key))e.preventDefault();if((k==='e'||e.key===' ')&&!e.repeat)interact();});
+document.addEventListener('keyup',e=>{let k=e.key.length===1?e.key.toLowerCase():e.key;keys[k]=false;});
+document.querySelectorAll('[data-move]').forEach(b=>{let k=b.dataset.move;b.addEventListener('pointerdown',e=>{e.preventDefault();touch[k]=true;b.setPointerCapture(e.pointerId)});['pointerup','pointercancel','lostpointercapture'].forEach(ev=>b.addEventListener(ev,()=>touch[k]=false));});
+$('interact').addEventListener('click',interact);
+$('penBtn').addEventListener('click',()=>{let cost=penCost();if(save.cash<cost)return;save.cash-=cost;save.pen++;say('Pen upgraded! You can hold more Noobs.');updateUI();});
+$('auraBtn').addEventListener('click',()=>{let cost=auraCost();if(save.cash<cost)return;save.cash-=cost;save.aura++;say('Aura Treadmill upgraded! Income multiplier increased.');updateUI();});
+$('speedBtn').addEventListener('click',()=>{let cost=speedCost();if(save.cash<cost)return;save.cash-=cost;save.speed++;say('Speed upgraded! Run faster during your next heist.');updateUI();});
+$('saveBtn').addEventListener('click',saveGame);
+$('resetBtn').addEventListener('click',()=>{if(confirm('Reset your Noob empire? This deletes the saved game.')){localStorage.removeItem('stealANoobSave');fresh();}});
+if(!loadGame())fresh();else{updateUI();say('Welcome back! Your saved empire has loaded.');}
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
